@@ -1,0 +1,62 @@
+name: Build Quest APK
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    concurrency:
+      group: quest-apk
+      cancel-in-progress: false
+    steps:
+      - name: Check Unity activation settings
+        env:
+          UNITY_LICENSE: ${{ secrets.UNITY_LICENSE }}
+          UNITY_SERIAL: ${{ secrets.UNITY_SERIAL }}
+          UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
+          UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
+        run: |
+          if [[ -z "$UNITY_EMAIL" || -z "$UNITY_PASSWORD" || ( -z "$UNITY_LICENSE" && -z "$UNITY_SERIAL" ) ]]; then
+            echo "::error::Set UNITY_EMAIL and UNITY_PASSWORD, plus UNITY_LICENSE (Personal) or UNITY_SERIAL (Pro), in the repository's Actions secrets."
+            exit 1
+          fi
+
+      - name: Check out repository
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+
+      - name: Free disk space for the Unity Android container
+        run: |
+          sudo rm -rf -- /usr/local/lib/android /usr/share/dotnet
+          df -h /
+
+      - name: Build Android APK
+        uses: game-ci/unity-builder@4423ee75828dff56037d1d1cfdac6b68e3a6ba00 # v4
+        env:
+          UNITY_LICENSE: ${{ secrets.UNITY_LICENSE }}
+          UNITY_SERIAL: ${{ secrets.UNITY_SERIAL }}
+          UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
+          UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
+        with:
+          targetPlatform: Android
+          unityVersion: 6000.4.5f1
+          customImage: unityci/editor:ubuntu-6000.4.5f1-android-3.2.2
+          androidExportType: androidPackage
+          buildName: QuestRealityCapture-Performance
+          buildsPath: build
+          versioning: None
+
+      - name: Upload APK
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: QuestRealityCapture-Performance-APK
+          path: build/Android/*.apk
+          if-no-files-found: error
+          retention-days: 14
