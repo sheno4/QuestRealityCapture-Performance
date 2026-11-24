@@ -9,7 +9,8 @@ permissions:
 jobs:
   build:
     if: github.ref == 'refs/heads/main'
-    runs-on: ubuntu-24.04
+    # Meta XR SDK 203's Runtime Optimizer does not compile under the Linux editor.
+    runs-on: windows-2022
     timeout-minutes: 90
     concurrency:
       group: quest-apk
@@ -21,21 +22,30 @@ jobs:
           UNITY_SERIAL: ${{ secrets.UNITY_SERIAL }}
           UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
           UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
+        shell: pwsh
         run: |
-          if [[ -z "$UNITY_EMAIL" || -z "$UNITY_PASSWORD" || ( -z "$UNITY_LICENSE" && -z "$UNITY_SERIAL" ) ]]; then
-            echo "::error::Set UNITY_EMAIL and UNITY_PASSWORD, plus UNITY_LICENSE (Personal) or UNITY_SERIAL (Pro), in the repository's Actions secrets."
+          if (!$env:UNITY_EMAIL -or !$env:UNITY_PASSWORD -or (!$env:UNITY_LICENSE -and !$env:UNITY_SERIAL)) {
+            Write-Output "::error::Set UNITY_EMAIL and UNITY_PASSWORD, plus UNITY_LICENSE (Personal) or UNITY_SERIAL (Pro), in the repository's Actions secrets."
             exit 1
-          fi
+          }
 
       - name: Check out repository
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           persist-credentials: false
 
-      - name: Free disk space for the Unity Android container
+      - name: Wait for Windows Docker
+        shell: powershell
         run: |
-          sudo rm -rf -- /usr/local/lib/android /usr/share/dotnet
-          df -h /
+          Start-Service docker
+          for ($attempt = 0; $attempt -lt 10; $attempt++) {
+            docker info --format '{{.OSType}}' 2>$null
+            if ($LASTEXITCODE -eq 0) {
+              exit 0
+            }
+            Start-Sleep -Seconds 6
+          }
+          throw 'Docker did not start on the Windows runner.'
 
       - name: Build Android APK
         uses: game-ci/unity-builder@4423ee75828dff56037d1d1cfdac6b68e3a6ba00 # v4
@@ -47,7 +57,7 @@ jobs:
         with:
           targetPlatform: Android
           unityVersion: 6000.4.5f1
-          customImage: unityci/editor:ubuntu-6000.4.5f1-android-3.2.2
+          customImage: unityci/editor:windows-6000.4.5f1-android-3.2.2
           androidExportType: androidPackage
           buildName: QuestRealityCapture-Performance
           buildsPath: build
